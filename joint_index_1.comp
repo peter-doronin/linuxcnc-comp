@@ -1,0 +1,103 @@
+component joint_index;
+
+pin in      float   cmd-in;
+pin out     float   cmd-out;
+pin in      float   fb-in;
+pin out     float   fb-out;
+pin in      bit     enable;
+pin in      bit     index-enable;
+pin out     float   cmd-offset;
+pin out     float   fb-offset;
+pin out     bit     debug;
+pin out     float   vel-fb;
+pin out     float   accel-fb;
+pin out     float   fb-delayed-out;
+pin in      float   delay-match;
+
+variable    bool    index_enable_last;
+variable    double  cmd_out_offset;
+variable    double  fb_in_prev;
+variable    double  pos_err_prev;
+variable    double  pos_err_prev_prev;
+variable    double  vel_fb_prev;
+variable    bool    reset_delay;
+variable 	bool	cmd_reset;
+variable    double  pos_error;
+variable	double	ddt_offset;
+variable	double	err_offset;
+variable 	double 	fb_in_unindex;
+function feedback;
+function command;
+
+license "GPL"; // indicates GPL v2 or later
+;;
+
+#
+
+double filter(double input)
+	{
+		#define RING_SIZE 3
+		static unsigned int ring_index;
+		static double ring_buf[RING_SIZE];
+		ring_index++;
+		ring_index %= RING_SIZE;
+		ring_buf[ring_index] = input;
+		double out;
+		for(int i = 0; i < RING_SIZE; i++)
+		{
+			out += ring_buf[i];
+		}
+		out /= RING_SIZE;
+		return out;
+	}
+	
+FUNCTION(command)
+ {
+	if(cmd_reset)
+    {
+        cmd_reset = 0;
+        cmd_offset = cmd_out - cmd_in;
+        err_offset = fb_delayed_out
+    }  
+    
+	if(!enable) //single period reset
+    {
+        cmd_offset = cmd_out - cmd_in;
+    }
+    else 
+    {
+        cmd_out = cmd_in + cmd_offset;        
+    }
+ }	
+ 
+FUNCTION(feedback)
+ {    
+    
+
+    if(index_enable_last != index_enable)
+    {
+        index_enable_last = index_enable;
+        if(!index_enable) 
+        {
+            cmd_reset = 1;
+            ddt_offset = fb_in_prev;          
+        }        
+    }
+    
+    fb_in_unindex = ddt_offset + fb_in;
+    
+ 
+    vel_fb = filter((fb_in + ddt_offset - fb_in_prev) / fperiod);
+    accel_fb = (vel_fb - vel_fb_prev) / fperiod;
+    
+    fb_delayed_out = fb_in + vel_fb * delay_match + accel_fb * delay_match * delay_match / 2;  
+    
+    fb_out = fb_in_unindex;
+    
+    fb_in_prev = fb_in + ddt_offset;
+    vel_fb_prev = vel_fb;
+    pos_err_prev_prev = pos_err_prev;    
+    pos_err_prev = fb_delayed_out - cmd_in;
+    debug = !debug;  
+ }
+

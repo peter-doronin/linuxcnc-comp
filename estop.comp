@@ -1,0 +1,45 @@
+component estop;
+option singleton yes;
+pin out bit     ui_reset;
+pin out bit     ui_activate;
+pin in  bit     enable_in;
+pin out bit     enable_out;
+pin in bit      fault-in-# [32 : personality];
+pin in bit      estop_in;
+option extra_setup;
+
+license "GPL";
+author "Peter Doronin";
+
+function _ ;
+;;
+
+#define MAX_CHAN 20
+static int num_in = -1;
+
+RTAPI_MP_ARRAY_INT(num_in, MAX_CHAN, "count of inputs");
+
+
+FUNCTION(_) 
+ {
+    static bool enable_in_lst;
+    
+    bool fault_in = 0;    
+    
+    for(int i = 0; i < num_in; i++)
+    {
+        if(fault_in(i) == 1) {fault_in = 1;};
+    }    
+
+    enable_out = enable_in & (!fault_in) & estop_in;
+    
+ }
+ 
+ EXTRA_SETUP()
+{
+	if(num_in < 0) {rtapi_print_msg(RTAPI_MSG_ERR, "ESTOP: expected num_in=\n"); return -1;};
+    if(num_in < 1) {rtapi_print_msg(RTAPI_MSG_ERR, "ESTOP: iputs count must be non zero\n"); return -1;};
+	personality = num_in;
+    return 0;
+}
+

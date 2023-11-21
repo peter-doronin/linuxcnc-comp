@@ -1,0 +1,56 @@
+component encoder_scale;
+option singleton no;
+
+pin in      signed  counts;
+pin in      float   scale;
+pin out     float   pos;
+pin out     float   vel;
+pin out     float   accel;
+pin out     float   pos-actual;
+pin in      float   delay;
+
+variable signed hWordFB; 
+variable unsigned counts_last;
+variable double pos_last;
+variable double vel_last;
+variable double offset;
+variable bool startup;
+
+function _ fp;
+
+license "GPL"; // indicates GPL v2 or later
+;;
+   
+#
+FUNCTION(_)
+ {
+    if(scale == 0) return;
+    
+    if(!startup)	
+    { 
+		startup = 1;
+		long counts_l;
+		counts_l = (uint32_t)counts;
+		offset = counts_l / scale;		 
+		return 0; 
+    }
+    
+    long counts_l;
+    counts_l = (uint32_t)counts;
+    if(((uint32_t)counts - (long)counts_last) > 100000000L) {hWordFB--;};
+    if(((uint32_t)counts - (long)counts_last) < -100000000L) {hWordFB++;};
+    counts_l += ((long)hWordFB << 32);
+    counts_last = (uint32_t)counts;    
+    pos = counts_l / scale;
+    vel = (pos - pos_last) / fperiod;
+    pos_last = pos;
+    accel = (vel - vel_last) / fperiod;
+    vel_last = vel;
+    
+    if(delay != 0)//delay extrapolation not working good
+    {
+		pos_actual = vel * delay + accel * delay * delay / 2;
+		pos_actual += pos; 
+	} else pos_actual = 0;     
+ }
+

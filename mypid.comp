@@ -1,0 +1,176 @@
+component mypid;
+
+pin 	in      float   command;
+pin 	out		float   output;
+pin 	in      float   feedback;
+pin 	out     float   error;
+pin 	in      bit     enable;
+pin 	in      bit     index-enable;
+pin 	out     float   cmd-offset;
+pin 	out     float   cmd-index-off;
+pin 	out     float   cmd-vel;
+pin 	out     float   cmd-accel;
+
+pin 	in		float	filter_in;
+pin 	out		float	filter_out;
+pin 	in		float	filter_time;
+
+pin 	in		float	Ifilter;
+pin		in 		float	Pgain;
+pin		in 		float	Igain;
+pin		in 		float	Dgain;
+pin		in 		float	FF0;
+pin		in 		float	FF1;
+pin		in 		float	FF2;
+pin		in 		float	FF3;
+pin		in 		float 	maxerror;
+pin		in 		float   maxerrorI;
+pin		in 		float	maxerrorD;
+pin		in 		float	maxcmdD;
+pin		in 		float	maxcmdDD;
+pin		in 		float	maxcmdDDD;
+pin		in 		float	maxoutput;
+    
+pin 	out     bit     debug;
+variable    bool    	index_enable_last;
+variable 	double		out_prev;
+variable 	double		command_prev;
+variable 	double 		cmd_index_offset;
+variable 	double 		fb_index_offset;
+
+variable 	double		out;
+variable 	double		cmd;
+variable 	double		fb;
+variable 	double		fb_prev;
+variable 	double		fb_d;
+variable 	double		cmd_prev;
+variable 	double 		cmd_d;
+variable 	double		cmd_d_prev;
+variable 	double		cmd_dd;
+variable 	double		cmd_dd_prev;
+variable 	double		cmd_ddd;
+variable 	double		cmd_ddd_prev;
+variable 	double		err;
+variable 	double		err_prev;
+variable 	double		err_i;
+variable 	double		err_d;
+variable 	bool		pid_reset;
+
+
+
+function _;
+
+license "GPL"; // indicates GPL v2 or later
+;;
+
+#include "rtapi_math.h"
+
+double filter(double input, double time_in, double f_per);
+ 
+FUNCTION(_)
+ {
+	debug = !debug;
+	
+    if(index_enable_last != index_enable)
+    {
+        index_enable_last = index_enable;
+        if(!index_enable) 
+        {
+            cmd_offset += out;
+            pid_reset = 1;
+        }
+    }
+		
+	cmd = command_prev;
+	command_prev = command;
+    fb	= feedback;
+//######################################################### PID
+	if(pid_reset)
+	{
+		pid_reset = 0;
+		cmd_prev = 0;
+		fb_prev  = 0;		
+	}
+    cmd_d 		 = 	(cmd    -    cmd_prev) / fperiod;			//calc feed forward vars
+	cmd_dd 	 	 = 	(cmd_d  -  cmd_d_prev) / fperiod;
+	cmd_ddd  	 = 	(cmd_dd - cmd_dd_prev) / fperiod;
+	cmd_prev 	 = 	cmd;
+	cmd_d_prev   = 	cmd_d;
+	cmd_dd_prev	 = 	cmd_dd;
+	cmd_ddd_prev = 	cmd_ddd;							
+
+	fb_d 		 = 	(fb - fb_prev) / fperiod;
+	fb_prev 	 = 	fb;
+	
+	err 		 = 	cmd - fb;									//calc error vars
+	err_d		 = 	cmd_d - fb_d; 
+	err_i		+= 	err * fperiod;
+	
+	double pid_maxcmdD = fabs(maxcmdD);
+	double pid_maxcmdDD = fabs(maxcmdDD);
+	double pid_maxcmdDDD = fabs(maxcmdDDD);
+	if (pid_maxcmdD != 0.0) if (cmd_d > pid_maxcmdD) cmd_d = pid_maxcmdD; else if (cmd_d < -pid_maxcmdD) cmd_d = -pid_maxcmdD;
+	if (pid_maxcmdDD != 0.0) if (cmd_dd > pid_maxcmdDD) cmd_dd = pid_maxcmdDD; else if (cmd_dd < -pid_maxcmdDD) cmd_dd = -pid_maxcmdDD;
+	if (pid_maxcmdDDD != 0.0) if (cmd_ddd > pid_maxcmdDDD) cmd_ddd = pid_maxcmdDDD; else if (cmd_ddd < -pid_maxcmdDDD) cmd_ddd = -pid_maxcmdDDD;
+	
+	double pid_maxerror = fabs(maxerror);
+	double pid_maxerrorD = fabs(maxerrorD);
+	double pid_maxerrorI = fabs(maxerrorI);
+	if (pid_maxerror != 0.0) if (err > pid_maxerror) err = pid_maxerror; else if (err < -pid_maxerror) err = -pid_maxerror;
+	if (pid_maxerrorD != 0.0) if (err_d > pid_maxerrorD) err_d = pid_maxerrorD; else if (err_d < -pid_maxerrorD) err_d = -pid_maxerrorD;
+	if (pid_maxerrorI != 0.0) if (err_i > pid_maxerrorI) err_i = pid_maxerrorI; else if (err_i < -pid_maxerrorI) err_i = -pid_maxerrorI;
+																//calc error vars/	
+	out = 	err 	* 	Pgain + \
+			err_i 	* 	Igain + \
+			err_d	*	Dgain + \
+			cmd		*	FF0	  +	\
+			cmd_d	*	FF1	  + \
+			cmd_dd	*	FF2   + \
+			cmd_ddd	*	FF3;
+	double pid_maxoutput = fabs(maxoutput);
+	if (pid_maxoutput != 0.0) if (out > pid_maxoutput) out = pid_maxoutput; else if (out < -pid_maxoutput) out = -pid_maxoutput;
+
+	
+//######################################################### PID/			
+	error  = err;
+	cmd_vel = cmd_d;
+	cmd_accel = cmd_dd;
+    
+	if(!enable)
+    {
+        cmd_offset = output - out;
+        err_i = 0;
+    }
+    else 
+    {
+        output = out + cmd_offset;        
+    }
+
+	cmd_index_off = cmd_offset;
+	filter_out = filter(filter_in, filter_time, fperiod);
+	
+ }
+
+double filter(double input, double time_in, double f_per)
+	{
+		#define RING_SIZE 1000
+		int time = (int)(fabs(time_in) / f_per); 
+		if(time == 0) return input;
+		if(time > RING_SIZE) time = RING_SIZE;
+		
+		static unsigned int ring_index;
+		static double ring_buf[RING_SIZE];
+		ring_index++;
+		ring_index %= time;
+		ring_buf[ring_index] = input;
+		double f_out;
+		for(int i = 0; i < time; i++)
+		{
+			f_out += ring_buf[i];
+		}
+		f_out /= time;
+		return f_out;
+	}
+
+
+

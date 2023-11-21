@@ -1,0 +1,144 @@
+component joint_index;
+
+pin 	in      float   cmd-in;
+pin 	out		float   sg-cmd;
+pin 	in		float   sg-fb;
+pin 	in      float   fb-in;
+pin 	out     float   fb-out;
+pin 	in      bit     enable;
+pin 	io      bit     index-enable;
+pin 	out     float   cmd-offset;
+pin 	out     float   fb-vel;
+pin 	out     float   fb-accel;
+pin		in		float	delay-time;
+pin		out		float	error;
+pin		out		bit 	target-error;
+pin		out		bit 	calc-error;
+pin		out		float	error-calculated;
+
+    
+pin 	out     bit     debug;
+variable    bool    	index_enable_last;
+variable 	double		command_prev;
+variable 	double 		cmd_index_offset;
+variable 	bool 		index_reset;
+
+variable 	double		cmd_in_prev;
+variable 	double		fb;
+variable 	double		fb_prev;
+variable 	double		fb_vel_prev;
+variable 	double		delay_offset;
+variable 	double		error_offset;
+variable	int			calc_error_timer;
+//variable 	bool		calc_error;
+
+
+function command;
+function feedback;
+
+license "GPL"; // indicates GPL v2 or later
+;;
+
+#include "rtapi_math.h"
+
+#define MAX_ERROR_OFFSET 0.1
+
+double filter(double input, double time_in, double f_per);
+ 
+FUNCTION(feedback)
+ {
+	debug = !debug;
+
+	
+    if(index_enable_last != index_enable)
+    {
+        index_enable_last = index_enable;
+        if(!index_enable) 
+        {
+			index_reset = 1;
+			calc_error = 1;
+			calc_error_timer = 0;
+            fb_prev = 0;
+        }
+    }		
+
+	
+	fb = fb_in;
+	
+    fb_vel = (fb - fb_prev) / fperiod;
+    fb_accel = (fb_vel - fb_vel_prev) / fperiod;
+    fb_vel_prev = fb_vel;
+    fb_prev = fb;
+    delay_offset = fb_vel * delay_time + fb_accel * delay_time * delay_time / 2;
+	fb_out = fb + delay_offset;
+	
+	cmd_in_prev = cmd_in;
+	error = cmd_in - fb_out;
+
+ }
+
+FUNCTION(command)
+ {
+	if(calc_error)
+	{
+		if(cmd_in == cmd_in_prev)
+		{
+			calc_error_timer++;
+		} else {calc_error_timer = 0;};
+		if(calc_error_timer > 200)
+		{
+			error_calculated = error_offset + error;
+			if(fabs(error_calculated) > 0.0005) target_error = 1;
+			calc_error = 0;
+			calc_error_timer = 0;
+		}
+	}
+	if(target_error && enable)
+	{
+		if(fabs(error_calculated - error_offset) > 0.0001)
+		{
+			error_offset += (error_calculated - error_offset) / 1000;
+		} else target_error = 0;
+	}
+	if(error_offset > MAX_ERROR_OFFSET) {error_offset = MAX_ERROR_OFFSET; target_error = 0;};
+	if(error_offset < -MAX_ERROR_OFFSET) {error_offset = -MAX_ERROR_OFFSET; target_error = 0;};
+	
+	if(index_reset)
+	{
+		index_reset = 0;
+		cmd_offset = sg_fb - cmd_in;
+	}
+	
+	if(!enable)
+	{
+        cmd_offset = sg_fb - cmd_in;
+        error_offset = 0;
+    }
+    else
+    {
+        sg_cmd = cmd_in + cmd_offset + error_offset;        
+    }
+ }
+
+double filter(double input, double time_in, double f_per)
+	{
+		#define RING_SIZE 100
+		int time = (int)(fabs(time_in) / f_per); 
+		if(time == 0) return input;
+		if(time > RING_SIZE) time = RING_SIZE;
+		
+		static unsigned int ring_index;
+		static double ring_buf[RING_SIZE];
+		ring_index++;
+		ring_index %= time;
+		ring_buf[ring_index] = input;
+		double f_out;
+		for(int i = 0; i < time; i++)
+		{
+			f_out += ring_buf[i];
+		}
+		f_out /= time;
+		return f_out;
+	}
+
+

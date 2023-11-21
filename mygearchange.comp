@@ -1,0 +1,78 @@
+component mygearchange;
+pin     in  signed  sel;
+pin     in  float   speed_in;
+pin     out float   speed_out;
+pin     out signed  gear; 
+pin     in  bit     sense-# [32 : personality];
+param   rw  float   scale-# [32 : personality] = 1;
+pin     out bit     fault;
+pin     in  bit     enable;
+
+option extra_setup;
+option singleton yes;
+
+function _;
+license "GPL";
+;;
+
+#define MAX_CHAN 8
+static int num_chan = -1;
+RTAPI_MP_ARRAY_INT(num_chan, MAX_CHAN, "The number of pockets in each carousel")
+
+int get_pos(hal_bit_t **sense_ptr)
+{
+	int pos = 0;	
+	for(int i = 0; i < num_chan; i++)
+	{
+		if(*(sense_ptr[i]))
+		{
+			if(pos > 0) return -1;
+			if(pos == 0) pos = i + 1;
+		};
+	}
+    if(pos == 0) return -1;
+	return pos;
+}
+
+FUNCTION(_) {
+    static bool error_last;
+    static bool error;
+    static int gear_last;
+
+    gear = get_pos(__comp_inst->sense);
+    if(gear == -1) error = 1;
+    
+    if(enable) 
+    {
+        if(gear_last != gear)
+        {
+            gear_last = gear;        
+            error = 1;
+        };
+        
+        if(error)
+        {
+            if(error != error_last)
+            {
+                error_last = error;
+                rtapi_print_msg(RTAPI_MSG_ERR, "GEARCHANGE: GEAR SENSE ERROR");
+            }
+            speed_out = 0;
+        } else speed_out = scale((gear-1)) * speed_in;
+    }
+    else
+    {
+        error = 0;
+        speed_out = 0;
+        gear_last = gear;
+    };
+    fault = error;
+    
+
+}
+
+EXTRA_SETUP(){
+	//rtapi_print_msg(RTAPI_MSG_ERR, "num_chan: %d", num_sense);
+	personality = num_chan;
+    return 0;
+}

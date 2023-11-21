@@ -1,0 +1,49 @@
+component stepgen_index;
+
+pin in      float   pos-cmd-in;
+pin out     float   pos-cmd-out;
+pin in      bit     enable;
+pin in      bit     index-enable;
+pin out     bit     reset-out;
+pin out     float   offset;
+pin out     bit     debug;
+variable    bool    index_enable_last;
+variable    double  pos_cmd_out_offset;
+variable    bool    index_trig;
+function _;
+
+license "GPL"; // indicates GPL v2 or later
+;;
+
+#
+FUNCTION(_)
+ {
+    if(index_trig)
+    {
+        index_trig = 0;
+        offset = pos_cmd_out_offset + pos_cmd_in;
+    }
+        
+    if(!enable) //single period reset
+    {
+        offset = pos_cmd_out - pos_cmd_in;
+    }
+    else 
+    {
+        pos_cmd_out = pos_cmd_in + offset;
+    }
+
+    if(index_enable_last != index_enable)
+    {
+        index_enable_last = index_enable;
+        if(!index_enable) 
+        {
+            index_trig = 1;
+            pos_cmd_out_offset = pos_cmd_out;
+        }        
+    }
+
+
+    debug = !debug;  
+ }
+

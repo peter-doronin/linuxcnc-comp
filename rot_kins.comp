@@ -1,0 +1,33 @@
+component rot_kins;
+option singleton yes;
+pin in float Xcmd_in;
+pin in float Ycmd_in;
+pin out float Xcmd_out;
+pin out float X1cmd_out;
+pin out float Xfb_out;
+pin out float Yfb_out;
+pin in float Xfb_in;
+pin in float X1fb_in;
+
+function feedback fp;
+function command fp;
+license "GPL"; // indicates GPL v2 or later
+;;
+
+#define CTGA 1.428148007f    // ctg(35 deg)
+#define SINA_i 1.743446796f    // 1/sin(35 deg)
+#define COSA 0.819152044f   // COS(35 deg)
+#define SINA 0.573576436f   // SIN(35 deg)
+#
+FUNCTION(command) 
+ {
+    Xcmd_out = Xcmd_in + Ycmd_in * CTGA;
+    X1cmd_out = -Ycmd_in * SINA_i;
+ }
+ 
+FUNCTION(feedback) 
+ {
+    Xfb_out = Xfb_in + X1fb_in * COSA;
+    Yfb_out = - X1fb_in * SINA;
+ }
+

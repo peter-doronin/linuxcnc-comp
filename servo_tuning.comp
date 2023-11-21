@@ -1,0 +1,55 @@
+component servo_tuning;
+option singleton yes;
+pin in float in-0;
+pin in float in-1;
+pin in float scale = 1;
+pin in bit reset-offset;
+pin in float delay-0;
+pin in float delay-1;
+pin out float out;
+pin out float out-ddt1;
+pin out float out-ddt2;
+pin out float out-ddt12;
+variable double offset;
+
+function _ fp;
+license "GPL"; // indicates GPL v2 or later
+;;
+#include "rtapi_math.h"
+
+#
+FUNCTION(_) 
+ {
+    #define RING_SIZE 1000
+    static double ring_0[RING_SIZE];
+    static double ring_1[RING_SIZE];
+    static unsigned int ring_index;
+    ring_index++;
+    ring_index %= RING_SIZE;
+    ring_0[ring_index] = in_0;
+    ring_1[ring_index] = in_1;
+	unsigned int ring_index_delay_0 = ring_index + RING_SIZE - ((unsigned int)(fabs(delay_0)/fperiod) % RING_SIZE);
+	unsigned int ring_index_delay_1 = ring_index + RING_SIZE - ((unsigned int)(fabs(delay_1)/fperiod) % RING_SIZE);
+	ring_index_delay_0 %= RING_SIZE;
+	ring_index_delay_1 %= RING_SIZE;	
+	double in_0_delay = ring_0[ring_index_delay_0];
+	double in_1_delay = ring_1[ring_index_delay_1];
+	unsigned int ring_index_last_0 = ring_index + RING_SIZE - 1;
+	unsigned int ring_index_last_1 = ring_index + RING_SIZE - 1;
+	ring_index_last_0 %= RING_SIZE;
+	ring_index_last_1 %= RING_SIZE; 
+	double in_0_last = ring_0[ring_index_last_0];
+	double in_1_last = ring_1[ring_index_last_1];    
+    
+    double var1 = ((double)in_0_delay / scale);
+    double var2 = ((double)in_1_delay / scale);
+    if(!reset_offset) {offset = var1 - var2;};
+    var2 = var2 + offset;   
+    out = var1 - var2;
+    out_ddt1 = (var1 - in_0_last) / fperiod;
+    out_ddt2 = (var2 - in_1_last) / fperiod;
+    out_ddt12 = out_ddt1 - out_ddt2;
+
+
+ }
+

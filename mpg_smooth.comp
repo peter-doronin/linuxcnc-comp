@@ -1,0 +1,96 @@
+
+component mpg_smooth;
+
+pin in signed counts-in;
+pin in signed maxvel;
+pin in signed maxaccel;
+pin in float scale-in;
+pin in bit enable;
+
+pin out float scale-out;
+pin out signed counts-out;
+pin out signed current-vel;
+pin out bit active;
+
+param rw float step-size = 0.001;
+variable double current_pos;
+variable double current_vel_f;
+
+
+function _ fp;
+license "GPL";
+
+;;
+#include "rtapi_math.h"
+
+FUNCTION(_) {
+    double max_dv, tiny_dp, pos_err, vel_req;
+    double target_pos, maxvel_f, maxaccel_f;
+    double scale;
+    if(step_size >= 0)
+        {
+            scale = 1 / step_size;
+        } else scale = 1000;
+        
+    target_pos = (counts_in * scale);
+    scale_out = scale_in / scale;
+    maxaccel_f = (double)maxaccel * scale;
+    maxvel_f = (double)maxvel * scale;
+    
+    active = 0;
+    max_dv = maxaccel_f * fperiod;
+    tiny_dp = max_dv * fperiod * 0.001;
+    if (enable) 
+    {
+        pos_err = target_pos - current_pos;
+        if (pos_err > tiny_dp) 
+        {
+            vel_req = -max_dv + sqrt(2.0 * maxaccel_f * pos_err + max_dv * max_dv);
+            active = 1;
+        } 
+        else 
+            if (pos_err < -tiny_dp) 
+                {
+                    vel_req =  max_dv - sqrt(-2.0 * maxaccel_f * pos_err + max_dv * max_dv);
+                    active = 1;
+                } 
+            else {vel_req = 0.0;}
+    } 
+    else 
+    {
+        vel_req = 0.0;
+        current_pos = target_pos;
+    }
+
+    if (vel_req > maxvel_f) 
+    {
+        vel_req = maxvel_f;
+    }
+    else 
+        if (vel_req < -maxvel_f) 
+        {
+            vel_req = -maxvel_f;
+        }
+
+    if (vel_req > current_vel_f + max_dv)
+    {
+        current_vel_f += max_dv;
+    } else 
+        if (vel_req < current_vel_f - max_dv)
+            {
+                current_vel_f -= max_dv;
+            } 
+            else
+            {
+                current_vel_f = vel_req;
+            }
+
+    if (current_vel_f != 0.0)                          /* check for still moving */
+    {
+        active = 1;
+    }
+    current_pos += current_vel_f * fperiod;            /* integrate velocity to get new position */
+    counts_out = (int32_t)current_pos;
+    current_vel = current_vel_f;
+}
+

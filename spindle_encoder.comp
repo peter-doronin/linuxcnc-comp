@@ -1,0 +1,49 @@
+component spindle_encoder;
+option singleton yes;
+
+pin in      signed  encoder-counts;
+pin in      float   scale;
+pin out     float   pos;
+pin out     float   vel;
+pin io      bit     index-enable;
+pin in      bit     index-in;
+pin out     bit     index-out;
+
+variable signed hWordFB; 
+variable unsigned encoder_counts_last;
+variable double pos_last;
+
+function _ fp;
+
+license "GPL"; // indicates GPL v2 or later
+;;
+
+
+#
+FUNCTION(_)
+ {
+    long counts;
+    counts = (uint32_t)encoder_counts;
+    if(((uint32_t)encoder_counts - (long)encoder_counts_last) > 100000000L) {hWordFB--;};
+    if(((uint32_t)encoder_counts - (long)encoder_counts_last) < -100000000L) {hWordFB++;};
+    counts += ((long)hWordFB << 32);
+    encoder_counts_last = (uint32_t)encoder_counts;    
+    pos = counts / scale;
+    vel = (pos - pos_last) / fperiod;
+    pos_last = pos;
+    
+    static bool index_enable_last;
+    static bool index_in_last;
+    if(index_enable != index_enable_last) 
+    {
+        index_enable_last = index_enable;
+        index_out = index_enable;        
+    }
+    if(index_in != index_in_last)
+    {
+        index_in_last = index_in;
+        index_enable &= index_in;
+    }
+    
+ }
+

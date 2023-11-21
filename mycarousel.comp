@@ -1,0 +1,134 @@
+component mycarousel;
+
+
+pin in  bit    enable;
+pin out bit    reached;
+pin out bit    motor-fwd;
+pin out bit    motor-rev;
+pin in  bit    sense-# [32 : personality];
+pin in  bit	   sense-latch; 
+pin in  bit    tool-change;
+pin out bit    tool-changed;
+pin in  signed tool-number;
+pin out signed current-pos;
+pin in 	signed target-pos;
+pin out signed state-out;
+pin in  float  overshoot-time;
+pin out bit    error;
+
+option extra_setup;
+option singleton yes;
+
+license "GPL";
+author "Peter Doronin";
+
+variable int state;
+
+function _ ;
+;;
+
+#define MAX_CHAN 8
+static int num_sense = -1;
+RTAPI_MP_ARRAY_INT(num_sense, MAX_CHAN, "The number of pockets in each carousel")
+
+int get_pos(hal_bit_t **sense_ptr)
+{
+	int pos = 0;
+	
+	for(int i = 0; i < num_sense; i++)
+	{
+		if(*(sense_ptr[i]))
+		{
+			if(pos > 0) pos = -1;
+			if(pos == 0) pos = i + 1;
+		};
+	}
+	return pos;
+}
+
+FUNCTION(_)
+{
+	static int move_timer;
+	static int latch_timer;
+	static int overshoot_timer;
+	static int fb_pos_lst;
+	static int target_pos_lst;
+	static int cmd_pos;
+	static bool tool_change_lst;
+    static bool error_last;
+	int fb_pos = get_pos(__comp_inst->sense);
+	state_out = state;
+    float overshoot_time_in;
+    if(overshoot_time < 0) overshoot_time_in = -overshoot_time; else overshoot_time_in = overshoot_time;
+	if(!enable) state = 0;
+	switch(state)
+	{
+		case 0:
+			motor_fwd = 0;
+			motor_rev = 0;
+			latch_timer = 0;
+			move_timer = 0;
+            overshoot_timer = 0;
+			reached = 0;
+			tool_changed = 0;
+            error_last = 0;
+            error = 0;
+            fb_pos_lst = fb_pos;
+			if(!sense_latch) {current_pos = fb_pos;} else {current_pos = 0;};
+			if(enable) state = 1;
+			break; //disabled
+				
+		case 1: 
+			motor_fwd = 0;
+			motor_rev = 0;
+			if(tool_change)
+			{
+				if(tool_number == 0) {tool_changed = 1;};
+				if((tool_number > 0) && (tool_number <= num_sense))
+				{					
+					if(current_pos == tool_number) {tool_changed = 1;} else {state = 2; cmd_pos = tool_number;};
+				};
+				
+			} else {tool_changed = 0;};
+			//if(fb_pos != fb_pos_lst) {tool_changed = 0; state = 5;};
+			break; //ready
+		
+		case 2: 
+			motor_fwd = 1;
+			motor_rev = 0;
+			if(fb_pos == cmd_pos) {state = 3;};
+			if(fb_pos != fb_pos_lst) {move_timer = 0;} else {move_timer++;};
+			if(move_timer > 10000) {move_timer = 0; state = 5;};
+			break; //moving
+
+		case 3:
+			motor_fwd = 1;
+			motor_rev = 0;			
+			if(overshoot_timer > overshoot_time_in) {overshoot_timer = 0; state = 4;} else {overshoot_timer++;};	
+			break; //overshot	
+		case 4: 
+			if(!sense_latch) {latch_timer = 0; current_pos = fb_pos; state = 1;};
+			if(latch_timer > 10000) {latch_timer = 0; state = 5;} else {latch_timer++;};
+			motor_fwd = 0;
+			motor_rev = 1;
+			break; //latching
+			
+		case 5: 
+			motor_fwd = 0;
+			motor_rev = 0;
+            error = 1;
+            if(!error_last){
+                error_last = 1;
+                rtapi_print_msg(RTAPI_MSG_ERR, "CAROUSEL: ERROR");
+                };
+			break; //error
+	}
+	fb_pos_lst = fb_pos;
+	target_pos_lst = target_pos;
+}
+
+EXTRA_SETUP(){
+	//rtapi_print_msg(RTAPI_MSG_ERR, "num_chan: %d", num_sense);
+	personality = num_sense;
+    return 0;
+}

@@ -1,0 +1,36 @@
+component my_spindle;
+option singleton yes;
+pin in float vel_in;
+pin out float vel_fb_out;
+pin in float scale;
+pin out signed vel_out;
+pin in signed vel_fb_in;
+pin in float accel;
+
+function _ fp;
+license "GPL"; // indicates GPL v2 or later
+;;
+
+#include "rtapi_math.h"
+
+#
+FUNCTION(_) 
+ {
+    double accel_abs = fabs(accel);
+    static double vel_out_f;
+    vel_fb_out = (double) (vel_fb_in / scale);
+    
+    if(accel_abs != 0)
+    {
+        double err = vel_in - vel_out_f;
+        if(err > 0) vel_out_f += (accel_abs * fperiod);
+        if(err < 0) vel_out_f -= (accel_abs * fperiod);
+        if(fabs(err) < (accel_abs * fperiod)) vel_out_f = vel_in;
+        vel_out = (int32_t) (vel_out_f  * scale);
+    }
+    else
+    {
+        vel_out = (int32_t) (vel_in  * scale);
+    }
+ }
+
