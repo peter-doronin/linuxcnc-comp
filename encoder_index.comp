@@ -4,21 +4,23 @@ option singleton yes;
 pin in      signed  encoder-counts;
 pin in      float   scale;
 pin out     float   pos;
+pin out     float   revs;
 pin out     float   vel;
+pin out     float   vel-rpm;
+pin out     float   vel-rpm-abs;
 pin io      bit     index-enable;
-pin in      bit     index-in;
-pin out     bit     index-out;
 
 variable signed hWordFB; 
 variable unsigned encoder_counts_last;
 variable double pos_last;
+variable double revs_offset;
 
 function _ fp;
 
 license "GPL"; // indicates GPL v2 or later
 ;;
 
-
+#include "rtapi_math.h"
 #
 FUNCTION(_)
  {
@@ -30,20 +32,22 @@ FUNCTION(_)
     encoder_counts_last = (uint32_t)encoder_counts;    
     pos = counts / scale;
     vel = (pos - pos_last) / fperiod;
+    vel_rpm = vel * 60;
+    vel_rpm_abs = fabs(vel_rpm);
+    
+    double pos_delta = fabs(pos - pos_last);
     pos_last = pos;
     
-    static bool index_enable_last;
-    static bool index_in_last;
-    if(index_enable != index_enable_last) 
+    double int_part;
+    if(fabs(modf(pos, &int_part)) < pos_delta)
     {
-        index_enable_last = index_enable;
-        index_out = index_enable;        
-    }
-    if(index_in != index_in_last)
-    {
-        index_in_last = index_in;
-        index_enable &= index_in;
-    }
+		if(index_enable) 
+		{
+			index_enable = 0;
+			revs_offset = -int_part;
+		}
+	}
+    revs = pos + revs_offset;
     
  }
 
