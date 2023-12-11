@@ -1,4 +1,4 @@
-component spindle_encoder;
+component encoder_index;
 option singleton yes;
 
 pin in      signed  encoder-counts;
